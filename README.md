@@ -37,7 +37,6 @@
     button:hover {
       background-color: #45a049;
     }
-    /* Progress Bar Styling */
     .progress-container {
       width: 80%;
       max-width: 300px;
@@ -136,7 +135,6 @@
     <input type="file" id="fileUpload" accept="image/*">
     <input type="text" id="tagInput" placeholder="Enter tag (e.g., Party)">
     <button onclick="uploadImage()">Upload</button>
-    <!-- Progress Bar -->
     <div class="progress-container">
       <div class="progress-bar">
         <div class="progress" id="progress">0%</div>
@@ -148,12 +146,10 @@
   <h3>Uploaded Images</h3>
   <div id="gallery"></div>
 
-  <!-- Firebase SDK -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
-    import { getDatabase, ref, push, onValue, remove } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js";
+    import { getDatabase, ref, push, onValue, remove, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js";
 
-    // Firebase Config
     const firebaseConfig = {
       apiKey: "AIzaSyCIfleywEbd1rcjymkfEfFYxPpvYdZHGhk",
       authDomain: "cvang-vahan.firebaseapp.com",
@@ -164,16 +160,13 @@
       appId: "1:117318825099:web:afc0e2f863117cb14bfc"
     };
 
-    // Firebase Initialize
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
     const imagesRef = ref(db, 'images');
 
-    // Cloudinary Config
     const cloudName = 'di83mshki';
     const uploadPreset = 'anonymous_upload';
 
-    // Upload Function
     window.uploadImage = function() {
       const file = document.getElementById('fileUpload').files[0];
       const tag = document.getElementById('tagInput').value || 'No Tag';
@@ -193,7 +186,6 @@
 
       const xhr = new XMLHttpRequest();
 
-      // Track upload progress
       xhr.upload.onprogress = function(event) {
         if (event.lengthComputable) {
           const percentComplete = Math.round((event.loaded / event.total) * 100);
@@ -203,39 +195,49 @@
         }
       };
 
-      // Handle completion
       xhr.onload = function() {
         if (xhr.status === 200) {
           const data = JSON.parse(xhr.responseText);
+          console.log("Cloudinary Response:", data);
+          if (!data.secure_url) {
+            status.textContent = 'Upload failed: No secure URL received';
+            alert('Upload failed: No secure URL received');
+            return;
+          }
           const imgObj = {
             url: data.secure_url,
             tag: tag,
-            timestamp: Date.now()
+            timestamp: serverTimestamp()
           };
-          // Store in Firebase
-          push(imagesRef, imgObj);
-          progressBar.style.width = '100%';
-          progressBar.textContent = '100%';
-          status.textContent = 'Complete';
-          alert('Uploaded Successfully!');
+          push(imagesRef, imgObj)
+            .then(() => {
+              console.log("Firebase Push Successful:", imgObj);
+              progressBar.style.width = '100%';
+              progressBar.textContent = '100%';
+              status.textContent = 'Complete';
+              alert('Uploaded Successfully!');
+            })
+            .catch((error) => {
+              console.error("Firebase Push Error:", error);
+              status.textContent = 'Upload failed: Firebase error';
+              alert('Upload failed: Firebase error');
+            });
         } else {
+          console.error("Cloudinary Upload Failed:", xhr.status, xhr.responseText);
           status.textContent = 'Upload failed!';
           alert('Upload failed!');
         }
       };
 
-      // Handle errors
       xhr.onerror = function() {
         status.textContent = 'Upload error occurred!';
         alert('Upload failed due to an error!');
       };
 
-      // Send request
       xhr.open('POST', url, true);
       xhr.send(formData);
     };
 
-    // Download Function
     window.downloadImage = async function(url, tag) {
       try {
         const response = await fetch(url);
@@ -254,30 +256,34 @@
       }
     };
 
-    // Load images from Firebase and delete after 5 minutes
     onValue(imagesRef, (snapshot) => {
       const gallery = document.getElementById('gallery');
       gallery.innerHTML = '';
       const images = snapshot.val();
       const now = Date.now();
 
+      console.log("Firebase Data:", images);
+
       if (images) {
-        Object.keys(images).forEach(key => {
-          const img = images[key];
-          if (now - img(timestamp) < 300000) { // 5 minutes
+        Object.entries(images).forEach(([key, img]) => {
+          const imgTimestamp = img.timestamp || 0;
+          if (now - imgTimestamp < 300000) {
             const container = document.createElement('div');
             container.className = 'image-container';
             container.innerHTML = `
               <p class="tag">Tag: ${img.tag}</p>
-              <img src="${img.url}" alt="uploaded image">
+              <img src="${img.url}" alt="uploaded image" onload="console.log('Image loaded:', '${img.url}')">
               <button class="download-btn" onclick="downloadImage('${img.url}', '${img.tag}')">Download</button>
             `;
             gallery.appendChild(container);
           } else {
-            // Delete images older than 5 minutes from Firebase
-            remove(ref(db, `images/${key}`));
+            remove(ref(db, `images/${key}`))
+              .then(() => console.log(`Image ${key} deleted from Firebase`))
+              .catch((error) => console.error("Delete Error:", error));
           }
         });
+      } else {
+        console.log("No images in Firebase");
       }
     });
   </script>
